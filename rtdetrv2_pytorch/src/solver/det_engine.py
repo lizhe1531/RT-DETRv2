@@ -4,6 +4,7 @@ https://github.com/facebookresearch/detr/blob/main/engine.py
 
 Copyright(c) 2023 lyuwenyu. All Rights Reserved.
 """
+import time
 
 import sys
 import math
@@ -117,12 +118,20 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, 
     iou_types = coco_evaluator.iou_types
     # coco_evaluator = CocoEvaluator(base_ds, iou_types)
     # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
+    model_latency_list = []
+    postprocess_latency_list = []
+    backbone_latency_list = []
+    encoder_latency_list = []
+    decoder_latency_list = []
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        outputs = model(samples)
+        start_time = time.time()
+        outputs = model(samples,start_time=start_time,backbone_latency_list=backbone_latency_list,encoder_latency_list=encoder_latency_list,decoder_latency_list=decoder_latency_list)
+        model_latency = (time.time() - start_time) * 1000
+        model_latency_list.append(model_latency)
         # with torch.autocast(device_type=str(device)):
         #     outputs = model(samples)
 
@@ -130,7 +139,10 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         # orig_target_sizes = torch.tensor([[samples.shape[-1], samples.shape[-2]]], device=samples.device)
         
+        start_time = time.time()
         results = postprocessor(outputs, orig_target_sizes)
+        postprocess_latency = (time.time() - start_time) * 1000
+        postprocess_latency_list.append(postprocess_latency)
 
         # if 'segm' in postprocessor.keys():
         #     target_sizes = torch.stack([t["size"] for t in targets], dim=0)
@@ -158,6 +170,16 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessor, 
             stats['coco_eval_bbox'] = coco_evaluator.coco_eval['bbox'].stats.tolist()
         if 'segm' in iou_types:
             stats['coco_eval_masks'] = coco_evaluator.coco_eval['segm'].stats.tolist()
+
+    avg_model_latency = sum(model_latency_list) / len(model_latency_list)
+    avg_postprocess_latency = sum(postprocess_latency_list) / len(postprocess_latency_list)
+    total_latency = avg_model_latency + avg_postprocess_latency
+    avg_backbone_latency = sum(backbone_latency_list) / len(backbone_latency_list)
+    avg_encoder_latency = sum(encoder_latency_list) / len(encoder_latency_list)
+    avg_decoder_latency = sum(decoder_latency_list) / len(decoder_latency_list)
+
+    print(f"{avg_model_latency:.1f}/{avg_postprocess_latency:.1f}/{total_latency:.1f} ms inference/postprocessors/total")
+    print(f"{avg_backbone_latency:.1f}/{avg_encoder_latency:.1f}/{avg_decoder_latency:.1f} ms backbone/encoder/decoder")
             
     return stats, coco_evaluator
 

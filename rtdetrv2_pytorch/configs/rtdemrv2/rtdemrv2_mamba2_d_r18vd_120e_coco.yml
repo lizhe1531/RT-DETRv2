@@ -1,0 +1,47 @@
+__include__: [
+  '../dataset/coco_detection.yml',
+  '../runtime.yml',
+  './include/dataloader.yml',
+  './include/optimizer.yml',
+  './include/rtdemrv2_mamba2_d_r50vd.yml',
+]
+
+
+output_dir: ./output_rtdemrv2/mamba2_d_r18vd
+checkpoint_step: 5
+
+
+PResNet:
+  depth: 18
+  freeze_at: -1
+  freeze_norm: False
+  pretrained: True
+
+
+HybridEncoder:
+  in_channels: [128, 256, 512]
+  hidden_dim: 256
+  expansion: 0.5
+
+
+Mamba2_Decoder:
+  num_layers: 3
+
+
+epoches: 120 
+
+optimizer:
+  type: AdamW
+  params:
+    - 
+      params: '^(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+
+train_dataloader: 
+  dataset: 
+    transforms:
+      policy:
+        epoch: 117
+  collate_fn:
+    scales: ~
